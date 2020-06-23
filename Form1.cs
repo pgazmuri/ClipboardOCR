@@ -9,6 +9,7 @@ using System.IO;
 using System.Linq;
 using System.Net;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 
@@ -16,8 +17,10 @@ namespace ClipboardOCR
 {
     public partial class Form1 : Form
     {
-        private string key = "<key>";
-        private string endpoint = "<endpoint url>";
+        private string key = "";
+        private string endpoint = "https://cvclipboardtotext.cognitiveservices.azure.com/";
+
+        private string[] ComplianceRegExes = new string[] { @"\d{4}.\d{4}.\d{4}.\d{4}", @"\d{3}.\d{2}.\d{4}" };
 
         public Form1()
         {
@@ -38,8 +41,17 @@ namespace ClipboardOCR
                     //send to ocr
                     var cli = new ComputerVisionClient(new ApiKeyServiceClientCredentials(key)) { Endpoint = endpoint };
                     //var task = cli.RecognizeTextInStreamAsync(image.ToStream(ImageFormat.Png), Microsoft.Azure.CognitiveServices.Vision.ComputerVision.Models.TextRecognitionMode.Handwritten);
-                    var task = cli.RecognizePrintedTextInStreamAsync(false, image.ToStream(ImageFormat.Png));
+                    var imageStream = image.ToStream(ImageFormat.Png);
+                    var task = cli.RecognizePrintedTextInStreamAsync(false, imageStream);
                     task.Wait();
+
+                    //copy image that was sent
+                    imageStream = image.ToStream(ImageFormat.Png);
+                    imageStream.Seek(0, SeekOrigin.Begin);
+                    var bytes = new byte[imageStream.Length];
+                    imageStream.Read(bytes, 0, (int)imageStream.Length);
+                    File.WriteAllBytes(@"c:\temp\last.png", bytes);
+
                     //dump text to form
                     StringBuilder sb = new StringBuilder();
 
@@ -51,7 +63,11 @@ namespace ClipboardOCR
                             _ = sb.AppendLine();
                         }
                     }));
-                    tbResults.Text = sb.ToString().Replace(" \n", "\n");
+                    var extractedText = sb.ToString().Replace(" \n", "\n");
+                    ComplianceRegExes.Select(r => new Regex(r)).ToList().ForEach(r => {
+                        extractedText = r.Replace(extractedText, "[PII/PCI REDACTED]");
+                    });
+                    tbResults.Text = extractedText;
                     if (cbAutoCopy.Checked)
                     {
                         if (tbResults.Text.Length > 0)
